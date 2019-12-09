@@ -3,7 +3,6 @@ package ru.metlife.integration.service;
 
 import static java.lang.String.join;
 import static java.util.Collections.emptyList;
-import static java.util.Objects.isNull;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
@@ -13,11 +12,11 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.springframework.util.DigestUtils.md5Digest;
 import static ru.metlife.integration.util.CommonUtils.getOrderIndependentHash;
 import static ru.metlife.integration.util.CommonUtils.getStringCellValue;
-import static ru.metlife.integration.util.Constants.DELIVERY_STATUS_COMPLETED;
 import static ru.metlife.integration.util.Constants.FI_LETTER_STATUS;
 
 import java.io.UnsupportedEncodingException;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,9 +29,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import ru.metlife.integration.dto.OrderDto;
 import ru.metlife.integration.dto.RecipientDto;
-import ru.metlife.integration.service.XlsService.SheetData;
+import ru.metlife.integration.service.xssf.OrderRowContentCallback;
+import ru.metlife.integration.service.xssf.OrderRowUpdateStatusCallback;
+import ru.metlife.integration.service.xssf.XlsService;
+import ru.metlife.integration.service.xssf.XlsService.SheetData;
 
 
 @Service
@@ -79,14 +82,16 @@ public class DocumentExportService {
   }
 
   List<OrderDto> getOrdersToExport(SheetData sheetData) {
+    SheetData dictionarySheetData = dictionaryService.processSheet();
     return toOrderDto(sheetData)
         .stream()
         .filter(o -> isBlank(o.getOrderId())
             && isNotBlank(o.getPolNum())
             && !Objects.equals("Совкомбанк", o.getPolNum()))
         .flatMap(o -> {
-          List<RecipientDto> recipients = dictionaryService.getRecipientsFromDictionary(
-              getOrderIndependentHash(o.getDealership(), o.getPartner(), o.getRegion()));
+          List<RecipientDto> recipients = dictionaryService
+              .getRecipientsFromDictionary(dictionarySheetData,
+                  getOrderIndependentHash(o.getDealership(), o.getPartner(), o.getRegion()));
           return recipients.stream()
               .map(r -> {
                 OrderDto newOrder = SerializationUtils.clone(o);
@@ -103,36 +108,23 @@ public class DocumentExportService {
   public void exportDocument() {
     log.info("start exportDocument");
     try {
-      xlsService.openWorkbook(true);
-      XlsService.SheetData sheetData = xlsService.processSheet("Общая", 0);
+      XlsService.SheetData sheetData = xlsService
+          .processSheet("Общая", 0, 0, new OrderRowContentCallback(dictionaryService));
       List<OrderDto> listOrders = getOrdersToExport(sheetData);
-      log.info("list orders to export {}",
-          listOrders.stream().map(OrderDto::toString).collect(joining("\n", "\n", "\n")));
       createOrder(listOrders);
+      xlsService.openWorkbook(true);
       listOrders.forEach(orderDto -> {
-        xlsService.updateCell("order_id", orderDto.getOrderId(), row -> {
-          int ppNumIdx = sheetData.getColumnIndex("№ п/п");
-          String ppNum = ofNullable(xlsService.readCell(row.getCell(ppNumIdx))).map(String::valueOf)
-              .orElse(null);
-          return Objects.equals(orderDto.getPpNum(), ppNum);
-        });
-        xlsService.updateCell("e-mail", orderDto.getRecipient(), row -> {
-          int ppNumIdx = sheetData.getColumnIndex("№ п/п");
-          String ppNum = ofNullable(xlsService.readCell(row.getCell(ppNumIdx))).map(String::valueOf)
-              .orElse(null);
-          return Objects.equals(orderDto.getPpNum(), ppNum);
-        });
-        xlsService.updateCell("e-mail копия", orderDto.getEmailCC(), row -> {
-          int ppNumIdx = sheetData.getColumnIndex("№ п/п");
-          String ppNum = ofNullable(xlsService.readCell(row.getCell(ppNumIdx))).map(String::valueOf)
-              .orElse(null);
-          return Objects.equals(orderDto.getPpNum(), ppNum);
-        });
+        Map<String, String> toUpdate = new HashMap<>();
+        toUpdate.put("order_id", orderDto.getOrderId());
+        toUpdate.put("e-mail", orderDto.getRecipient());
+        toUpdate.put("e-mail копия", orderDto.getEmailCC());
+        xlsService.updateRow(toUpdate, orderDto.getRowNum());
       });
       if (!listOrders.isEmpty()) {
         xlsService.saveWorkbook(true);
       }
     } catch (RuntimeException e) {
+      TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
       log.error(e.getMessage());
     } finally {
       xlsService.closeWorkbook();
@@ -145,27 +137,13 @@ public class DocumentExportService {
     log.info("start updateDeliveryStatusInDocsFile");
     try {
       xlsService.openWorkbook(true);
-      XlsService.SheetData sheetData = xlsService.processSheet("Общая", 0);
+      XlsService.SheetData sheetData = xlsService
+          .processSheet("Общая", 0, 0, new OrderRowUpdateStatusCallback());
       List<OrderDto> listOrdersFromXls = toOrderDto(sheetData);
-      listOrdersFromXls.forEach(orderFromXls -> {
-        String orderId = orderFromXls.getOrderId();
-        String deliveryStatus = orderFromXls.getDeliveryStatus();
-        if (!isBlank(orderId) && (!DELIVERY_STATUS_COMPLETED.equals(deliveryStatus))) {
-          OrderDto orderDtoFromDb = orderService.findByOrderId(orderId);
-          if (isNull(orderDtoFromDb)) {
-            log.error("Can't find order by order_id {}", orderId);
-          } else {
-            xlsService
-                .updateCell("delivery_status", orderDtoFromDb.getDeliveryStatus(),
-                    row -> {
-                      int orderIdIdx = sheetData.getColumnIndex("order_id");
-                      String orderIdFromXls = ofNullable(
-                          xlsService.readCell(row.getCell(orderIdIdx)))
-                          .map(String::valueOf).orElse(null);
-                      return Objects.equals(orderIdFromXls, orderId);
-                    });
-          }
-        }
+      listOrdersFromXls.forEach(orderDto -> {
+        OrderDto orderDtoFromDb = orderService.findByOrderId(orderDto.getOrderId());
+        xlsService.updateCell("delivery_status", orderDtoFromDb.getDeliveryStatus(),
+            orderDto.getRowNum());
       });
       xlsService.saveWorkbook(true);
     } catch (RuntimeException e) {
@@ -183,7 +161,7 @@ public class DocumentExportService {
         .collect(toList());
   }
 
-  OrderDto toOrderDto(Map<String, Object> orderFromXls) {
+  OrderDto toOrderDto(Map<String, String> orderFromXls) {
     String orderId = getStringCellValue(orderFromXls, "order_id", null);
     String deliveryStatus = getStringCellValue(orderFromXls, "delivery_status");
     String ppNum = getStringCellValue(orderFromXls, "№ п/п");
@@ -196,8 +174,10 @@ public class DocumentExportService {
     String dealership = getStringCellValue(orderFromXls, "Дилерский центр");
     String partner = getStringCellValue(orderFromXls, "Партнер");
     String region = getStringCellValue(orderFromXls, "Region");
+    String rowNum = getStringCellValue(orderFromXls, "rowNum");
 
     OrderDto orderDto = new OrderDto();
+    orderDto.setRowNum(Integer.valueOf(rowNum));
     orderDto.setPpNum(ppNum);
     orderDto.setOrderId(orderId);
     orderDto.setDeliveryStatus(deliveryStatus);

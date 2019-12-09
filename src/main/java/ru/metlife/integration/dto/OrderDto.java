@@ -15,6 +15,7 @@ public class OrderDto implements Serializable {
 
   private static final long serialVersionUID = 547368841245519989L;
 
+  private int rowNum;
   private String ppNum;
   private String orderId;
   private String deliveryStatus;

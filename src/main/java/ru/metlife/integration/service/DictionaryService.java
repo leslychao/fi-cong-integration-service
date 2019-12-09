@@ -11,7 +11,6 @@ import static ru.metlife.integration.util.CommonUtils.getOrderIndependentHash;
 import static ru.metlife.integration.util.CommonUtils.getStringCellValue;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,6 +20,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.metlife.integration.dto.DictionaryDto;
 import ru.metlife.integration.dto.RecipientDto;
+import ru.metlife.integration.service.xssf.DictionaryRowContentCallback;
+import ru.metlife.integration.service.xssf.XlsService;
+import ru.metlife.integration.service.xssf.XlsService.SheetData;
 import ru.metlife.integration.util.CommonUtils;
 
 @Service
@@ -49,7 +51,7 @@ public class DictionaryService {
         .collect(toList());
   }
 
-  DictionaryDto toDictionary(Map<String, Object> dictionaryFromXls) {
+  DictionaryDto toDictionary(Map<String, String> dictionaryFromXls) {
     String number = getStringCellValue(dictionaryFromXls, "№");
     String partner = getStringCellValue(dictionaryFromXls, "Партнер");
     String dealership = getStringCellValue(dictionaryFromXls, "Дилерский центр");
@@ -67,11 +69,14 @@ public class DictionaryService {
     return dictionaryDto;
   }
 
-  public List<RecipientDto> getRecipientsFromDictionary(int hash) {
+  public SheetData processSheet() {
+    return xlsService
+        .processSheet("Справочник", 0, 3, new DictionaryRowContentCallback());
+  }
+
+  public List<RecipientDto> getRecipientsFromDictionary(SheetData dictionarySheetData, int hash) {
+    List<RecipientDto> recipients = new ArrayList<>();
     try {
-      xlsService.openWorkbook(false);
-      XlsService.SheetData dictionarySheetData = xlsService.processSheet("Справочник", 3);
-      List<RecipientDto> recipients = new ArrayList<>();
       DictionaryDto dictionaryDto = toDictionary(dictionarySheetData)
           .stream()
           .filter(
@@ -99,13 +104,10 @@ public class DictionaryService {
               .collect(toCollection(() -> recipients));
         }
       }
-      return recipients;
     } catch (RuntimeException e) {
       log.error(e.getMessage());
-    } finally {
-      xlsService.closeWorkbook();
     }
-    return Collections.emptyList();
+    return recipients;
   }
 
 }

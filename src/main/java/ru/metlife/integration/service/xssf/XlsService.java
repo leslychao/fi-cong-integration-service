@@ -1,6 +1,5 @@
-package ru.metlife.integration.service;
+package ru.metlife.integration.service.xssf;
 
-import static java.lang.String.valueOf;
 import static java.util.Objects.isNull;
 import static java.util.Optional.ofNullable;
 import static org.apache.commons.io.FileUtils.deleteQuietly;
@@ -17,7 +16,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
-import java.math.BigDecimal;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.util.ArrayList;
@@ -33,49 +31,63 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Predicate;
+import javax.xml.parsers.ParserConfigurationException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import org.apache.poi.ooxml.util.SAXHelper;
+import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
+import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.util.IOUtils;
+import org.apache.poi.xssf.eventusermodel.ReadOnlySharedStringsTable;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
+import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler;
+import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler.SheetContentsHandler;
+import org.apache.poi.xssf.model.StylesTable;
+import org.apache.poi.xssf.usermodel.XSSFComment;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
 import ru.metlife.integration.exception.CloseWorkbookException;
 import ru.metlife.integration.exception.ReleaseLockException;
 import ru.metlife.integration.exception.SheetNotFoundException;
 import ru.metlife.integration.exception.WorkbookCreationException;
 import ru.metlife.integration.exception.WorkbookStoreException;
 
-/**
- * This class designed to read data from an xls or an xlsx document using Apache POI
- */
 public class XlsService {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(XlsService.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(
+      XlsService.class);
 
   private static final long DEFAULT_INITIAL_DELAY_IN_MILLIS = 0;
   private static final long DEFAULT_LOCK_REPEAT_INTERVAL_IN_MILLIS = 5000;
-
-  private String docFilePath;
-  private Workbook workbook;
-  private ByteArrayOutputStream byteArrayOutputStream;
-  private SheetData sheetData;
+  private static String BACKUP_FILE_EXTENSION = ".bkp";
 
   private long initialDelayInMillis = DEFAULT_INITIAL_DELAY_IN_MILLIS;
   private long lockRepeatIntervalInMillis;
+
   private FileLock fileLock;
   private RandomAccessFile randomAccessFile;
 
+  private String docFilePath;
+  private Workbook workbook;
+
+  private ByteArrayOutputStream byteArrayOutputStream;
+  private SheetData sheetData;
+
   public XlsService(String docFilePath) {
-    this.docFilePath = docFilePath;
-    this.lockRepeatIntervalInMillis = DEFAULT_LOCK_REPEAT_INTERVAL_IN_MILLIS;
+    this(docFilePath, DEFAULT_LOCK_REPEAT_INTERVAL_IN_MILLIS);
   }
 
   public XlsService(String docFilePath, long lockRepeatIntervalInMillis) {
@@ -83,12 +95,7 @@ public class XlsService {
     this.lockRepeatIntervalInMillis = lockRepeatIntervalInMillis;
   }
 
-  /**
-   * If lock object is valid then invoking this method releases the lock and releases any resources
-   * associated with holding the lock. If lock object is invalid then invoking this method has no
-   * effect
-   */
-  void releaseLock() {
+  public void releaseLock() {
     if (!isNull(fileLock)) {
       try {
         fileLock.release();
@@ -107,12 +114,6 @@ public class XlsService {
     }
   }
 
-  /**
-   * The method tries to get an shared lock using a file as a monitor, if at the moment the file is
-   * occupied by another process, the method goes into waiting this creates a separate {@link
-   * java.lang.Thread}, which with a given frequency, checks whether file is free, once file is
-   * free, it sends a signal
-   */
   void acquireLock() {
     ReentrantLock reentrantLock = new ReentrantLock();
     Condition condition = reentrantLock.newCondition();
@@ -164,57 +165,6 @@ public class XlsService {
     return !isNull(fileLock);
   }
 
-  /**
-   * This method parses {@link Sheet}, and generates metadata
-   *
-   * @param sheetName    the sheet name
-   * @param headerRowNum the line number starting with the heading
-   * @return {@link SheetData} data with which the application works
-   */
-  public SheetData processSheet(String sheetName, int headerRowNum) {
-    this.sheetData = new SheetData();
-    sheetData.setSheetName(sheetName);
-    sheetData.setHeaderRowNum(headerRowNum);
-    Sheet sheet = getSheet(sheetName);
-    sheetData.setSheet(sheet);
-    int rowCount = sheet.getLastRowNum() + 1;
-    sheetData.setRowCount(rowCount);
-    int lastRowNum = sheet.getLastRowNum();
-    sheetData.setLastRowNum(lastRowNum);
-    int startRowNum = sheet.getFirstRowNum();
-    for (int rowNum = headerRowNum; rowNum < rowCount; rowNum++) {
-      Row row = sheet.getRow(rowNum);
-      if (!isRowEmpty(row)) {
-        startRowNum = rowNum + 1;
-        sheetData.setStartRowNum(startRowNum);
-        break;
-      }
-    }
-    Map<String, Integer> columnIndex = buildColumnIndex(sheet, headerRowNum);
-    sheetData.setColumnIndex(columnIndex);
-    List<Map<String, Object>> data = new ArrayList<>();
-    for (int rowNum = startRowNum; rowNum < lastRowNum + 1; rowNum++) {
-      Row row = sheet.getRow(rowNum);
-      if (isRowEmpty(row)) {
-        continue;
-      }
-      Map<String, Object> targetMap = new LinkedHashMap<>();
-      for (Map.Entry<String, Integer> entry : columnIndex.entrySet()) {
-        {
-          targetMap.put(entry.getKey(), readCell(row, entry.getValue()));
-        }
-      }
-      data.add(targetMap);
-    }
-    sheetData.setData(data);
-    return sheetData;
-  }
-
-  /**
-   * Constructs a Workbook object
-   *
-   * @param isLocked denotes whether file should be locked
-   */
   public void openWorkbook(boolean isLocked) {
     if (isLocked) {
       acquireLock();
@@ -223,13 +173,6 @@ public class XlsService {
     this.byteArrayOutputStream = new ByteArrayOutputStream();
   }
 
-
-  /**
-   * Closes {@code Workbook} and releases all captured locks
-   *
-   * @see Workbook#close()
-   * @see #releaseLock()
-   */
   public void closeWorkbook() {
     if (!isNull(workbook)) {
       try (OutputStream outputStream = buffer(new FileOutputStream(docFilePath))) {
@@ -237,11 +180,15 @@ public class XlsService {
         releaseLock();
         if (byteArrayOutputStream.size() > 0) {
           outputStream.write(byteArrayOutputStream.toByteArray());
-          byteArrayOutputStream.close();
-          byteArrayOutputStream = new ByteArrayOutputStream();
         }
       } catch (IOException e) {
         throw new CloseWorkbookException(e);
+      } finally {
+        try {
+          byteArrayOutputStream.close();
+        } catch (IOException e) {
+        }
+        byteArrayOutputStream = new ByteArrayOutputStream();
       }
       this.workbook = null;
       this.sheetData = null;
@@ -249,13 +196,6 @@ public class XlsService {
     }
   }
 
-
-  /**
-   * This method Obtains the current Workbook or creates new one from an Excel file
-   *
-   * @return The created {@link Workbook}, never returns {@code null}
-   * @throws WorkbookCreationException if an error occurs
-   */
   Workbook getOrLoadWorkbook() {
     if (!isNull(workbook)) {
       return workbook;
@@ -271,14 +211,9 @@ public class XlsService {
     return workbook;
   }
 
-  /**
-   * The method creates a backup copy of the file with in the same directory
-   *
-   * @param file for which you want to create a backup
-   */
   void backupFile(File file) {
     LOGGER.info("creating file backup for {}", file.getAbsolutePath());
-    File backupFile = getFile(docFilePath + ".bkp");
+    File backupFile = getFile(docFilePath + BACKUP_FILE_EXTENSION);
     try {
       deleteQuietly(backupFile);
       try (FileInputStream fileInputStream = new FileInputStream(
@@ -291,11 +226,6 @@ public class XlsService {
     LOGGER.info("{} successfully written on disk", backupFile.getAbsolutePath());
   }
 
-  /**
-   * Writes {@link Workbook} data to a file
-   *
-   * @param isBackupFile if true, creates a backup for file denoted by {@code docFilePath}
-   */
   public void saveWorkbook(boolean isBackupFile) {
     File file = getFile(docFilePath);
     if (isBackupFile) {
@@ -308,7 +238,6 @@ public class XlsService {
     }
   }
 
-
   Sheet getSheet(String sheetName) {
     Iterator<Sheet> sheetIterator = getOrLoadWorkbook().sheetIterator();
     while (sheetIterator.hasNext()) {
@@ -320,20 +249,6 @@ public class XlsService {
     throw new SheetNotFoundException("Could not find sheet " + sheetName);
   }
 
-  Map<String, Integer> buildColumnIndex(Sheet sheet, int headerRowNum) {
-    Map<String, Integer> columnIndex = new LinkedHashMap<>();
-    Row row = sheet.getRow(headerRowNum);
-    if (isRowEmpty(row)) {
-      throw new IllegalArgumentException("Can't find header row headerRowNum " + headerRowNum);
-    }
-    row.cellIterator().forEachRemaining(cell -> {
-      if (!isCellEmpty(cell)) {
-        columnIndex.put(cell.toString(), cell.getColumnIndex());
-      }
-    });
-    return columnIndex;
-  }
-
   boolean isCellEmpty(Cell cell) {
     return isNull(cell) || BLANK == cell.getCellType();
   }
@@ -342,14 +257,14 @@ public class XlsService {
     return isNull(row) || row.getLastCellNum() <= 0;
   }
 
-  public void addRows(List<Map<String, Object>> data, int startRowNum) {
+  public void addRows(List<Map<String, String>> data, int startRowNum) {
     AtomicInteger atomicInteger = new AtomicInteger(startRowNum);
     data.forEach(
         stringObjectMap -> addRow(stringObjectMap, atomicInteger.getAndIncrement()));
   }
 
-  public void addRow(Map<String, Object> data, int rowNum) {
-    Sheet sheet = sheetData.getSheet();
+  public void addRow(Map<String, String> data, int rowNum) {
+    Sheet sheet = getSheet(sheetData.getSheetName());
     if (isRowEmpty(sheet.getRow(rowNum))) {
       sheet.createRow(rowNum);
       sheetData.setLastRowNum(rowNum);
@@ -361,27 +276,15 @@ public class XlsService {
     });
   }
 
-  public void updateRow(Map<String, Object> data,
-      Predicate<Row> predicate) {
+  public void updateRow(Map<String, String> data, int rowNum) {
     data.entrySet().forEach(
-        entry -> updateCell(entry.getKey(), entry.getValue(), predicate)
+        entry -> updateCell(entry.getKey(), entry.getValue(), rowNum)
     );
   }
 
-  /**
-   * Set a string value for the {@code cell}. Selects only {@code rows} for which the predicate
-   * expression evaluates to {@code true}
-   *
-   * @param cellName  - the cell name
-   * @param cellValue - the ell value
-   * @param predicate - the predicate, defines which rows to accept
-   */
-  public void updateCell(String cellName, Object cellValue,
-      Predicate<Row> predicate) {
+  public void updateCell(String cellName, String cellValue, int rowNum) {
     Map<String, Integer> columnIndex = sheetData.getColumnIndex();
-    Sheet sheet = sheetData.getSheet();
-    int startRowNum = sheetData.getStartRowNum();
-    int rowCount = sheetData.getRowCount();
+    Sheet sheet = getSheet(sheetData.getSheetName());
     int headerRowNum = sheetData.getHeaderRowNum();
     Row headerRow = sheet.getRow(headerRowNum);
     int cellIndex = sheetData.getColumnIndex(cellName);
@@ -393,19 +296,15 @@ public class XlsService {
       columnIndex.put(headerCell.toString(), cellIndex);
       LOGGER.warn("updateCell: Cell with name {} successfully created", cellName);
     }
-    for (int rowNum = startRowNum; rowNum < rowCount; rowNum++) {
-      Row row = sheet.getRow(rowNum);
-      if (isRowEmpty(row)) {
-        continue;
-      }
-      if (predicate.test(row)) {
-        setCellValue(rowNum, cellIndex, cellValue);
-      }
+    Row row = sheet.getRow(rowNum);
+    if (isRowEmpty(row)) {
+      return;
     }
+    setCellValue(rowNum, cellIndex, cellValue);
   }
 
-  void setCellValue(int rowNum, int cellIndex, Object cellValue) {
-    Sheet sheet = sheetData.getSheet();
+  void setCellValue(int rowNum, int cellIndex, String cellValue) {
+    Sheet sheet = getSheet(sheetData.getSheetName());
     Row row = sheet.getRow(rowNum);
     if (isRowEmpty(row)) {
       row = sheet.createRow(rowNum);
@@ -414,50 +313,116 @@ public class XlsService {
     if (isCellEmpty(cell)) {
       cell = row.createCell(cellIndex, STRING);
     }
-    cell.setCellValue(valueOf(cellValue));
+    cell.setCellValue(cellValue);
   }
 
-  Object readNumericCell(Cell cell) {
-    if (DateUtil.isCellDateFormatted(cell)) {
-      return cell.getDateCellValue();
+  public SheetData processSheet(String sheetName, int skipRowNum,
+      int headerRowNum, ExcelRowContentCollback excelRowContentCollback) {
+    sheetData = new SheetData();
+    sheetData.setSheetName(sheetName);
+    sheetData.setHeaderRowNum(headerRowNum);
+    try {
+      OPCPackage opcPackage = OPCPackage.open(docFilePath);
+      XSSFReader xssfReader = new XSSFReader(opcPackage);
+      XSSFReader.SheetIterator sheetIterator = (XSSFReader.SheetIterator) xssfReader
+          .getSheetsData();
+      while (sheetIterator.hasNext()) {
+        InputStream inputStream = sheetIterator.next();
+        if (sheetName.equals(sheetIterator.getSheetName())) {
+          try {
+            processSheet(
+                xssfReader.getStylesTable(),
+                new ReadOnlySharedStringsTable(opcPackage),
+                new ExcelWorkSheetHandler(excelRowContentCollback, skipRowNum, headerRowNum),
+                inputStream);
+          } finally {
+            inputStream.close();
+          }
+        }
+      }
+      return sheetData;
+    } catch (IOException | SAXException | OpenXML4JException | ParserConfigurationException e) {
+      throw new RuntimeException(e);
     }
-    BigDecimal numericCellValue = BigDecimal.valueOf(cell.getNumericCellValue());
-    if (numericCellValue.stripTrailingZeros().scale() <= 0) {
-      return numericCellValue.longValue();
-    }
-    return numericCellValue.doubleValue();
   }
 
-  Object readFormulaCell(Cell cell) {
-    switch (cell.getCachedFormulaResultType()) {
-      case NUMERIC:
-        return readNumericCell(cell);
-      case STRING:
-        return cell.getRichStringCellValue().getString();
-      default:
-        return cell.toString();
+  void processSheet(StylesTable stylesTable, ReadOnlySharedStringsTable readOnlySharedStringsTable,
+      SheetContentsHandler sheetContentsHandler,
+      InputStream inputStream) throws IOException, ParserConfigurationException, SAXException {
+    try {
+      XMLReader xmlReader = SAXHelper.newXMLReader();
+      ContentHandler xssfSheetXMLHandler = new XSSFSheetXMLHandler(
+          stylesTable,
+          null,
+          readOnlySharedStringsTable,
+          sheetContentsHandler,
+          new DataFormatter(),
+          false);
+      xmlReader.setContentHandler(xssfSheetXMLHandler);
+      xmlReader.parse(new InputSource(inputStream));
+    } catch (ParserConfigurationException e) {
+      throw new RuntimeException(e);
     }
   }
 
-  Object readCell(Row row, int cellIdx) {
-    return readCell(row.getCell(cellIdx));
-  }
+  private class ExcelWorkSheetHandler implements SheetContentsHandler {
 
-  Object readCell(Cell cell) {
-    if (isCellEmpty(cell)) {
-      return null;
+    ExcelRowContentCollback excelRowContentCollback;
+    private Map<String, String> rowTmp = new LinkedHashMap<>();
+    private Map<Integer, String> cellMapping = new HashMap<>();
+
+    private int currentRowNum;
+    private int skipRowNum;
+    private int headerRowNum;
+    private boolean isFirstRow = true;
+
+    ExcelWorkSheetHandler(
+        ExcelRowContentCollback excelRowContentCollback, int skipRowNum, int headerRowNum) {
+      this.excelRowContentCollback = excelRowContentCollback;
+      this.skipRowNum = skipRowNum;
+      this.headerRowNum = headerRowNum;
     }
-    switch (cell.getCellType()) {
-      case NUMERIC:
-        return readNumericCell(cell);
-      case BOOLEAN:
-        return cell.getBooleanCellValue();
-      case FORMULA:
-        return readFormulaCell(cell);
-      case STRING:
-        return cell.getStringCellValue();
-      default:
-        return cell.toString();
+
+    int getColumnIndex(String cellReference) {
+      return (new CellReference(cellReference)).getCol();
+    }
+
+    @Override
+    public void startRow(int rowNum) {
+      currentRowNum = rowNum;
+    }
+
+    @Override
+    public void endRow(int rowNum) {
+      if (currentRowNum >= skipRowNum && currentRowNum != headerRowNum) {
+        if (!rowTmp.isEmpty()) {
+          if (isFirstRow) {
+            isFirstRow = false;
+            sheetData.setStartRowNum(rowNum);
+          }
+          excelRowContentCollback.processRow(rowNum, rowTmp, sheetData.getData());
+          rowTmp.clear();
+        }
+      }
+    }
+
+    @Override
+    public void cell(String cellReference, String formattedValue, XSSFComment comment) {
+      if (currentRowNum >= skipRowNum) {
+        int idx = getColumnIndex(cellReference);
+        if (headerRowNum == currentRowNum) {
+          cellMapping.put(idx, formattedValue);
+          sheetData.getColumnIndex().put(formattedValue, idx);
+        } else {
+          rowTmp.put(cellMapping.get(idx), formattedValue);
+        }
+      }
+    }
+
+    @Override
+    public void endSheet() {
+      sheetData.setLastRowNum(currentRowNum);
+      sheetData.setRowCount(currentRowNum + 1);
     }
   }
 
@@ -467,12 +432,11 @@ public class XlsService {
   public static class SheetData {
 
     private String sheetName;
-    private Sheet sheet;
     private int headerRowNum;
     private int startRowNum;
     private int lastRowNum;
     private int rowCount;
-    private List<Map<String, Object>> data = new ArrayList<>();
+    private List<Map<String, String>> data = new ArrayList<>();
     private Map<String, Integer> columnIndex = new HashMap<>();
 
     public int getColumnIndex(String columnName) {

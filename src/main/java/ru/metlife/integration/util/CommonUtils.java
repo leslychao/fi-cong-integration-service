@@ -24,15 +24,14 @@ public class CommonUtils {
       .compile("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}$");
   private static final Pattern EMAIL_CC_PATTERN = Pattern.compile("(.*<)?(\\S+?)>?\\s*$");
 
-  public static String getStringCellValue(Map<String, Object> sheetAsMap,
+  public static String getStringCellValue(Map<String, String> sheetAsMap,
       String fieldName,
       String... defaultValue) {
     return getStringCellValue(sheetAsMap.get(fieldName), defaultValue);
   }
 
-  public static String getStringCellValue(Object cellValue, String... defaultValue) {
+  public static String getStringCellValue(String cellValue, String... defaultValue) {
     return ofNullable(cellValue)
-        .map(String::valueOf)
         .map(String::trim)
         .orElseGet(() -> {
           if (isNull(defaultValue)) {
@@ -96,13 +95,12 @@ public class CommonUtils {
     return VALID_EMAIL_PATTERN.matcher(email).matches();
   }
 
-  public static int getOrderIndependentHash(Object... objects) {
+  public static int getOrderIndependentHash(String... objects) {
     if (isNull(objects)) {
       return 0;
     }
     return Arrays.stream(objects)
-        .map(String::valueOf)
-        .mapToInt(Object::hashCode)
+        .mapToInt(String::hashCode)
         .reduce(0, (left, right) -> left ^ right);
   }
 }

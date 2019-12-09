@@ -24,7 +24,7 @@ spring:
             hibernate:
                 dialect: org.hibernate.dialect.SQLServer2012Dialect
                 format_sql: true
-                show_sql: true
+                show_sql: false
                 use_sql_comments: true
             org:
                 hibernate:
