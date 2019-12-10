@@ -7,8 +7,6 @@ import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.of;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.springframework.util.DigestUtils.md5Digest;
 import static ru.metlife.integration.util.CommonUtils.getOrderIndependentHash;
 import static ru.metlife.integration.util.CommonUtils.getStringCellValue;
@@ -59,6 +57,8 @@ public class DocumentExportService {
   private DataFiTimeFreezeService dataFiTimeFreezeService;
   private DictionaryService dictionaryService;
 
+  private boolean isExportDocumentActive;
+
   @Autowired
   public DocumentExportService(OrderService orderService,
       DataFiTimeFreezeService dataFiTimeFreezeService,
@@ -85,9 +85,6 @@ public class DocumentExportService {
     SheetData dictionarySheetData = dictionaryService.processSheet();
     return toOrderDto(sheetData)
         .stream()
-        .filter(o -> isBlank(o.getOrderId())
-            && isNotBlank(o.getPolNum())
-            && !Objects.equals("Совкомбанк", o.getPolNum()))
         .flatMap(o -> {
           List<RecipientDto> recipients = dictionaryService
               .getRecipientsFromDictionary(dictionarySheetData,
@@ -107,33 +104,40 @@ public class DocumentExportService {
   @Transactional
   public void exportDocument() {
     log.info("start exportDocument");
+    isExportDocumentActive = true;
     try {
       XlsService.SheetData sheetData = xlsService
           .processSheet("Общая", 0, 0, new OrderRowContentCallback(dictionaryService));
       List<OrderDto> listOrders = getOrdersToExport(sheetData);
       createOrder(listOrders);
-      xlsService.openWorkbook(true);
-      listOrders.forEach(orderDto -> {
-        Map<String, String> toUpdate = new HashMap<>();
-        toUpdate.put("order_id", orderDto.getOrderId());
-        toUpdate.put("e-mail", orderDto.getRecipient());
-        toUpdate.put("e-mail копия", orderDto.getEmailCC());
-        xlsService.updateRow(toUpdate, orderDto.getRowNum());
-      });
       if (!listOrders.isEmpty()) {
+        log.info("Orders to export {}", listOrders.size());
+        xlsService.openWorkbook(true);
+        listOrders.forEach(orderDto -> {
+          Map<String, String> toUpdate = new HashMap<>();
+          toUpdate.put("order_id", orderDto.getOrderId());
+          toUpdate.put("e-mail", orderDto.getRecipient());
+          toUpdate.put("e-mail копия", orderDto.getEmailCC());
+          xlsService.updateRow(toUpdate, orderDto.getRowNum());
+        });
         xlsService.saveWorkbook(true);
       }
+      log.info("Nothing to export");
     } catch (RuntimeException e) {
       TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
       log.error(e.getMessage());
     } finally {
       xlsService.closeWorkbook();
+      isExportDocumentActive = false;
     }
   }
 
   @Scheduled(cron = "${fi-cong-integration.update-state-in-docs-file-cron}")
   @Transactional
   public void updateDeliveryStatusInDocsFile() {
+    if (isExportDocumentActive) {
+      return;
+    }
     log.info("start updateDeliveryStatusInDocsFile");
     try {
       xlsService.openWorkbook(true);

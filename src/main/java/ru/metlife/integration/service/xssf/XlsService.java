@@ -174,6 +174,7 @@ public class XlsService {
   }
 
   public void closeWorkbook() {
+    LOGGER.info("closing workbook");
     if (!isNull(workbook)) {
       try (OutputStream outputStream = buffer(new FileOutputStream(docFilePath))) {
         workbook.close();
@@ -192,7 +193,6 @@ public class XlsService {
       }
       this.workbook = null;
       this.sheetData = null;
-      LOGGER.info("{} written successfully on disk", docFilePath);
     }
   }
 
@@ -236,6 +236,7 @@ public class XlsService {
     } catch (IOException e) {
       throw new WorkbookStoreException(e);
     }
+    LOGGER.info("{} written successfully on disk", docFilePath);
   }
 
   Sheet getSheet(String sheetName) {
