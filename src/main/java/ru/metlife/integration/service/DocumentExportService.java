@@ -1,18 +1,18 @@
 package ru.metlife.integration.service;
 
 
-import static java.lang.String.join;
 import static java.util.Collections.emptyList;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.of;
-import static org.springframework.util.DigestUtils.md5Digest;
+import static org.apache.commons.io.FileUtils.getFile;
 import static ru.metlife.integration.util.CommonUtils.getOrderIndependentHash;
 import static ru.metlife.integration.util.CommonUtils.getStringCellValue;
 import static ru.metlife.integration.util.Constants.FI_LETTER_STATUS;
 
-import java.io.UnsupportedEncodingException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.Objects;
 import javax.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.SerializationUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +64,7 @@ public class DocumentExportService {
   private DictionaryService dictionaryService;
 
   private boolean isExportDocumentActive;
+  private String docRootDir;
 
   @Autowired
   public DocumentExportService(OrderService orderService,
@@ -75,6 +78,7 @@ public class DocumentExportService {
   @PostConstruct
   public void init() {
     xlsService = new XlsService(docFilePath, lockRepeatIntervalInMillis);
+    docRootDir = getFile(docFilePath).getParent();
   }
 
   void createOrder(List<OrderDto> listOrders) {
@@ -104,9 +108,52 @@ public class DocumentExportService {
         .collect(toList());
   }
 
+  void updateRows(List<OrderDto> listOrders) {
+    StringBuilder stringBuilder = new StringBuilder();
+    try (InputStream inputStream = scriptVbs.getInputStream()) {
+      List<String> lines = IOUtils.readLines(inputStream, "UTF-8");
+      for (String line : lines) {
+        stringBuilder.append(line).append("\n");
+        if (line.equals("objExcel.WorkSheets(1).Activate")) {
+          Map<String, String> toUpdate = new HashMap<>();
+          listOrders.forEach(orderDto -> {
+            toUpdate.put("order_id", orderDto.getOrderId());
+            toUpdate.put("e-mail", orderDto.getRecipient());
+            toUpdate.put("e-mail копия", orderDto.getEmailCC());
+            xlsService.updateRow(toUpdate, orderDto.getRowNum(), stringBuilder);
+          });
+        }
+      }
+      FileUtils.write(getFile(docRootDir, "script.vbs"), stringBuilder.toString(), "UTF-8");
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  void updateStatus(List<OrderDto> listOrders) {
+    StringBuilder stringBuilder = new StringBuilder();
+    try (InputStream inputStream = scriptVbs.getInputStream()) {
+      List<String> lines = IOUtils.readLines(inputStream, "UTF-8");
+      for (String line : lines) {
+        stringBuilder.append(line).append("\n");
+        if (line.equals("objExcel.WorkSheets(1).Activate")) {
+          Map<String, String> toUpdate = new HashMap<>();
+          listOrders.forEach(orderDto -> {
+            toUpdate.put("delivery_status", orderDto.getOrderId());
+            xlsService.updateRow(toUpdate, orderDto.getRowNum(), stringBuilder);
+          });
+        }
+      }
+      FileUtils.write(getFile(docRootDir, "script.vbs"), stringBuilder.toString(), "UTF-8");
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   @Scheduled(cron = "${fi-cong-integration.export-order-cron}")
   @Transactional
   public void exportDocument() {
+    xlsService.acquireLock();
     log.info("start exportDocument");
     isExportDocumentActive = true;
     try {
@@ -116,17 +163,11 @@ public class DocumentExportService {
       createOrder(listOrders);
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
-        xlsService.acquireLock();
-        Map<String, String> toUpdate = new HashMap<>();
-        listOrders.forEach(orderDto -> {
-          toUpdate.put("order_id", orderDto.getOrderId());
-          toUpdate.put("e-mail", orderDto.getRecipient());
-          toUpdate.put("e-mail копия", orderDto.getEmailCC());
-          xlsService.updateRow(toUpdate, orderDto.getRowNum(), scriptVbs);
-        });
+        updateRows(listOrders);
         xlsService.saveWorkbook(true);
+      } else {
+        log.info("exportDocument: Nothing to export");
       }
-      log.info("Nothing to export");
     } catch (RuntimeException e) {
       TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
       log.error(e.getMessage());
@@ -142,18 +183,17 @@ public class DocumentExportService {
     if (isExportDocumentActive) {
       return;
     }
+    xlsService.acquireLock();
     log.info("start updateDeliveryStatusInDocsFile");
     try {
-      xlsService.acquireLock();
       XlsService.SheetData sheetData = xlsService
           .processSheet("Общая", 0, 0, new OrderRowUpdateStatusCallback());
-      List<OrderDto> listOrdersFromXls = toOrderDto(sheetData);
-      listOrdersFromXls.forEach(orderDto -> {
-        OrderDto orderDtoFromDb = orderService.findByOrderId(orderDto.getOrderId());
-        xlsService
-            .updateCell(new StringBuilder(), "delivery_status", orderDtoFromDb.getDeliveryStatus(),
-                orderDto.getRowNum());
-      });
+      List<OrderDto> listOrders = toOrderDto(sheetData);
+      if (!listOrders.isEmpty()) {
+        updateRows(listOrders);
+      } else {
+        log.info("updateDeliveryStatusInDocsFile: Nothing to update");
+      }
       xlsService.saveWorkbook(true);
     } catch (RuntimeException e) {
       log.error(e.getMessage());

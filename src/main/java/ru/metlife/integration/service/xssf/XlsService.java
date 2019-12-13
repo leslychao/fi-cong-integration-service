@@ -28,7 +28,6 @@ import javax.xml.parsers.ParserConfigurationException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.poi.ooxml.util.SAXHelper;
 import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
@@ -43,7 +42,6 @@ import org.apache.poi.xssf.model.StylesTable;
 import org.apache.poi.xssf.usermodel.XSSFComment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.Resource;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -66,7 +64,6 @@ public class XlsService {
   private RandomAccessFile randomAccessFile;
 
   private String docFilePath;
-  private String docRootDir;
   private SheetData sheetData;
 
   public XlsService(String docFilePath) {
@@ -75,7 +72,6 @@ public class XlsService {
 
   public XlsService(String docFilePath, long lockRepeatIntervalInMillis) {
     this.docFilePath = docFilePath;
-    docRootDir = getFile(docFilePath).getParent();
     this.lockRepeatIntervalInMillis = lockRepeatIntervalInMillis;
   }
 
@@ -174,21 +170,9 @@ public class XlsService {
     LOGGER.info("{} written successfully on disk", docFilePath);
   }
 
-  public void updateRow(Map<String, String> data, int rowNum, Resource scriptVbs) {
-    try (InputStream inputStream = scriptVbs.getInputStream()) {
-      List<String> lines = IOUtils.readLines(inputStream, "UTF-8");
-      StringBuilder stringBuilder = new StringBuilder();
-      for (String line : lines) {
-        stringBuilder.append(line).append("\n");
-        if (line.equals("objExcel.WorkSheets(1).Activate")) {
-          data.entrySet().forEach(entry -> updateCell(stringBuilder, entry.getKey(), entry.getValue(), rowNum));
-        }
-      }
-      FileUtils.write(getFile(docRootDir, "script.vbs"), stringBuilder.toString(), "UTF-8");
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-
+  public void updateRow(Map<String, String> data, int rowNum, StringBuilder stringBuilder) {
+    data.entrySet()
+        .forEach(entry -> updateCell(stringBuilder, entry.getKey(), entry.getValue(), rowNum));
   }
 
   public void updateCell(StringBuilder stringBuilder, String cellName, String cellValue,
