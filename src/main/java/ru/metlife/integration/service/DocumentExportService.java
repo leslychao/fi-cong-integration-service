@@ -82,6 +82,20 @@ public class DocumentExportService {
   public void init() {
     xlsService = new XlsService(docFilePath, lockRepeatIntervalInMillis);
     docRootDir = getFile(docFilePath).getParent();
+    try {
+      FileUtils.writeStringToFile(
+          getFile(docRootDir, "run.bat"),
+          new StringBuilder("chcp 65001")
+              .append("\n")
+              .append(String.format("cscript script.vbs \"%s\"", docFilePath))
+              .append("\n")
+              .append("taskkill /f /im excel.exe")
+              .append("\n")
+              .toString()
+          , "UTF-8");
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   void createOrder(List<OrderDto> listOrders) {
