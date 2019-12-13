@@ -1,18 +1,21 @@
 package ru.metlife.integration.service;
 
 
+import static java.lang.String.join;
 import static java.util.Collections.emptyList;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.of;
 import static org.apache.commons.io.FileUtils.getFile;
+import static org.springframework.util.DigestUtils.md5Digest;
 import static ru.metlife.integration.util.CommonUtils.getOrderIndependentHash;
 import static ru.metlife.integration.util.CommonUtils.getStringCellValue;
 import static ru.metlife.integration.util.Constants.FI_LETTER_STATUS;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
