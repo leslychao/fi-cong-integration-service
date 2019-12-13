@@ -161,13 +161,28 @@ public class XlsService {
     LOGGER.info("{} successfully written on disk", backupFile.getAbsolutePath());
   }
 
-  public void saveWorkbook(boolean isBackupFile) {
+  public void saveWorkbook(boolean isBackupFile, ProcessBuilder processBuilder) {
+    LOGGER.info("saveWorkbook started");
     File file = getFile(docFilePath);
     if (isBackupFile) {
       backupFile(file);
     }
-    //TODO
-    LOGGER.info("{} written successfully on disk", docFilePath);
+    Process process;
+    try {
+      process = processBuilder.start();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    try {
+      int exitVal = process.waitFor();
+      if (exitVal == 0) {
+        LOGGER.info("save workbook performed successfully");
+      } else {
+        throw new RuntimeException("save workbook fail");
+      }
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   public void updateRow(Map<String, String> data, int rowNum, StringBuilder stringBuilder) {

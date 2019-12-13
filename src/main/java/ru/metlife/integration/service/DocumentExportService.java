@@ -61,13 +61,19 @@ public class DocumentExportService {
   @Value("classpath:script.vbs")
   private Resource scriptVbs;
 
+  @Value("classpath:run.bat")
+  private Resource runBat;
+
   private XlsService xlsService;
   private OrderService orderService;
   private DataFiTimeFreezeService dataFiTimeFreezeService;
   private DictionaryService dictionaryService;
 
   private boolean isExportDocumentActive;
-  private String docRootDir;
+  private String docRootDirPath;
+  private String executionScriptPath;
+  private ProcessBuilder processBuilder;
+
 
   @Autowired
   public DocumentExportService(OrderService orderService,
@@ -81,21 +87,22 @@ public class DocumentExportService {
   @PostConstruct
   public void init() {
     xlsService = new XlsService(docFilePath, lockRepeatIntervalInMillis);
-    docRootDir = getFile(docFilePath).getParent();
-    try {
-      FileUtils.writeStringToFile(
-          getFile(docRootDir, "run.bat"),
-          new StringBuilder("chcp 65001")
-              .append("\n")
-              .append(String.format("cscript script.vbs \"%s\"", docFilePath))
-              .append("\n")
-              .append("taskkill /f /im excel.exe")
-              .append("\n")
-              .toString()
-          , "UTF-8");
+    docRootDirPath = getFile(docFilePath).getParent();
+    executionScriptPath = getFile(docRootDirPath, "run.bat").getAbsolutePath();
+    try (InputStream inputStream = runBat.getInputStream()) {
+      List<String> lines = IOUtils.readLines(inputStream, "UTF-8");
+      FileUtils.deleteQuietly(getFile(executionScriptPath));
+      StringBuilder sb = new StringBuilder();
+      for (String line : lines) {
+        sb.append(line.replaceAll("%docFilePath%", docFilePath)).append(String.format("%n"));
+      }
+      FileUtils.write(getFile(executionScriptPath), sb.toString(), "UTF-8");
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+    processBuilder = new ProcessBuilder();
+    processBuilder.command(executionScriptPath);
+    processBuilder.directory(getFile(docRootDirPath));
   }
 
   void createOrder(List<OrderDto> listOrders) {
@@ -141,7 +148,8 @@ public class DocumentExportService {
           });
         }
       }
-      FileUtils.write(getFile(docRootDir, "script.vbs"), stringBuilder.toString(), "UTF-8");
+      FileUtils.deleteQuietly(getFile(docRootDirPath, "script.vbs"));
+      FileUtils.write(getFile(docRootDirPath, "script.vbs"), stringBuilder.toString(), "UTF-8");
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
@@ -161,7 +169,8 @@ public class DocumentExportService {
           });
         }
       }
-      FileUtils.write(getFile(docRootDir, "script.vbs"), stringBuilder.toString(), "UTF-8");
+      FileUtils.deleteQuietly(getFile(docRootDirPath, "script.vbs"));
+      FileUtils.write(getFile(docRootDirPath, "script.vbs"), stringBuilder.toString(), "UTF-8");
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
@@ -181,7 +190,7 @@ public class DocumentExportService {
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
         updateRows(listOrders);
-        xlsService.saveWorkbook(true);
+        xlsService.saveWorkbook(true, processBuilder);
       } else {
         log.info("exportDocument: Nothing to export");
       }
@@ -207,11 +216,11 @@ public class DocumentExportService {
           .processSheet("Общая", 0, 0, new OrderRowUpdateStatusCallback());
       List<OrderDto> listOrders = toOrderDto(sheetData);
       if (!listOrders.isEmpty()) {
-        updateRows(listOrders);
+        updateStatus(listOrders);
       } else {
         log.info("updateDeliveryStatusInDocsFile: Nothing to update");
       }
-      xlsService.saveWorkbook(true);
+      xlsService.saveWorkbook(true, processBuilder);
     } catch (RuntimeException e) {
       log.error(e.getMessage());
     } finally {
