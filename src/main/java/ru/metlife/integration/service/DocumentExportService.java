@@ -190,7 +190,6 @@ public class DocumentExportService {
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
         updateRows(listOrders);
-        xlsService.saveWorkbook(true, processBuilder);
       } else {
         log.info("exportDocument: Nothing to export");
       }
@@ -199,6 +198,7 @@ public class DocumentExportService {
       log.error(e.getMessage());
     } finally {
       xlsService.releaseLock();
+      xlsService.saveWorkbook(true, processBuilder);
       isExportDocumentActive = false;
     }
   }
@@ -220,11 +220,11 @@ public class DocumentExportService {
       } else {
         log.info("updateDeliveryStatusInDocsFile: Nothing to update");
       }
-      xlsService.saveWorkbook(true, processBuilder);
     } catch (RuntimeException e) {
       log.error(e.getMessage());
     } finally {
       xlsService.releaseLock();
+      xlsService.saveWorkbook(true, processBuilder);
     }
   }
 
