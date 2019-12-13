@@ -24,6 +24,7 @@ import org.apache.commons.lang3.SerializationUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +52,9 @@ public class DocumentExportService {
 
   @Value("${fi-cong-integration.lock-repeat-interval-in-millis}")
   private long lockRepeatIntervalInMillis;
+
+  @Value("classpath:script.vbs")
+  private Resource scriptVbs;
 
   private XlsService xlsService;
   private OrderService orderService;
@@ -112,13 +116,13 @@ public class DocumentExportService {
       createOrder(listOrders);
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
-        xlsService.openWorkbook(true);
+        xlsService.acquireLock();
+        Map<String, String> toUpdate = new HashMap<>();
         listOrders.forEach(orderDto -> {
-          Map<String, String> toUpdate = new HashMap<>();
           toUpdate.put("order_id", orderDto.getOrderId());
           toUpdate.put("e-mail", orderDto.getRecipient());
           toUpdate.put("e-mail копия", orderDto.getEmailCC());
-          xlsService.updateRow(toUpdate, orderDto.getRowNum());
+          xlsService.updateRow(toUpdate, orderDto.getRowNum(), scriptVbs);
         });
         xlsService.saveWorkbook(true);
       }
@@ -127,7 +131,7 @@ public class DocumentExportService {
       TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
       log.error(e.getMessage());
     } finally {
-      xlsService.closeWorkbook();
+      xlsService.releaseLock();
       isExportDocumentActive = false;
     }
   }
@@ -140,20 +144,21 @@ public class DocumentExportService {
     }
     log.info("start updateDeliveryStatusInDocsFile");
     try {
-      xlsService.openWorkbook(true);
+      xlsService.acquireLock();
       XlsService.SheetData sheetData = xlsService
           .processSheet("Общая", 0, 0, new OrderRowUpdateStatusCallback());
       List<OrderDto> listOrdersFromXls = toOrderDto(sheetData);
       listOrdersFromXls.forEach(orderDto -> {
         OrderDto orderDtoFromDb = orderService.findByOrderId(orderDto.getOrderId());
-        xlsService.updateCell("delivery_status", orderDtoFromDb.getDeliveryStatus(),
-            orderDto.getRowNum());
+        xlsService
+            .updateCell(new StringBuilder(), "delivery_status", orderDtoFromDb.getDeliveryStatus(),
+                orderDto.getRowNum());
       });
       xlsService.saveWorkbook(true);
     } catch (RuntimeException e) {
       log.error(e.getMessage());
     } finally {
-      xlsService.closeWorkbook();
+      xlsService.releaseLock();
     }
   }
 

@@ -4,23 +4,17 @@ import static java.util.Objects.isNull;
 import static java.util.Optional.ofNullable;
 import static org.apache.commons.io.FileUtils.deleteQuietly;
 import static org.apache.commons.io.FileUtils.getFile;
-import static org.apache.commons.io.IOUtils.buffer;
-import static org.apache.poi.ss.usermodel.CellType.BLANK;
-import static org.apache.poi.ss.usermodel.CellType.STRING;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,42 +22,33 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import javax.xml.parsers.ParserConfigurationException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.poi.ooxml.util.SAXHelper;
 import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
 import org.apache.poi.openxml4j.opc.OPCPackage;
-import org.apache.poi.openxml4j.util.ZipSecureFile;
-import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellReference;
-import org.apache.poi.util.IOUtils;
 import org.apache.poi.xssf.eventusermodel.ReadOnlySharedStringsTable;
 import org.apache.poi.xssf.eventusermodel.XSSFReader;
 import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler;
 import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler.SheetContentsHandler;
 import org.apache.poi.xssf.model.StylesTable;
 import org.apache.poi.xssf.usermodel.XSSFComment;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
-import ru.metlife.integration.exception.CloseWorkbookException;
 import ru.metlife.integration.exception.ReleaseLockException;
-import ru.metlife.integration.exception.SheetNotFoundException;
-import ru.metlife.integration.exception.WorkbookCreationException;
-import ru.metlife.integration.exception.WorkbookStoreException;
 
 public class XlsService {
 
@@ -81,9 +66,7 @@ public class XlsService {
   private RandomAccessFile randomAccessFile;
 
   private String docFilePath;
-  private Workbook workbook;
-
-  private ByteArrayOutputStream byteArrayOutputStream;
+  private String docRootDir;
   private SheetData sheetData;
 
   public XlsService(String docFilePath) {
@@ -92,29 +75,11 @@ public class XlsService {
 
   public XlsService(String docFilePath, long lockRepeatIntervalInMillis) {
     this.docFilePath = docFilePath;
+    docRootDir = getFile(docFilePath).getParent();
     this.lockRepeatIntervalInMillis = lockRepeatIntervalInMillis;
   }
 
-  public void releaseLock() {
-    if (!isNull(fileLock)) {
-      try {
-        fileLock.release();
-        fileLock = null;
-      } catch (IOException e) {
-        throw new ReleaseLockException(e);
-      }
-    }
-    if (!isNull(randomAccessFile)) {
-      try {
-        randomAccessFile.close();
-        randomAccessFile = null;
-      } catch (IOException e) {
-        throw new ReleaseLockException(e);
-      }
-    }
-  }
-
-  void acquireLock() {
+  public void acquireLock() {
     ReentrantLock reentrantLock = new ReentrantLock();
     Condition condition = reentrantLock.newCondition();
     ScheduledExecutorService scheduledExecutorService = Executors
@@ -145,6 +110,26 @@ public class XlsService {
     }
   }
 
+  public void releaseLock() {
+    if (!isNull(fileLock)) {
+      try {
+        fileLock.release();
+        fileLock = null;
+      } catch (IOException e) {
+        throw new ReleaseLockException(e);
+      }
+    }
+    if (!isNull(randomAccessFile)) {
+      try {
+        randomAccessFile.close();
+        randomAccessFile = null;
+      } catch (IOException e) {
+        throw new ReleaseLockException(e);
+      }
+    }
+  }
+
+
   boolean tryLock() {
     File file = getFile(docFilePath);
     if (isNull(randomAccessFile)) {
@@ -163,52 +148,6 @@ public class XlsService {
       return false;
     }
     return !isNull(fileLock);
-  }
-
-  public void openWorkbook(boolean isLocked) {
-    if (isLocked) {
-      acquireLock();
-    }
-    this.workbook = getOrLoadWorkbook();
-    this.byteArrayOutputStream = new ByteArrayOutputStream();
-  }
-
-  public void closeWorkbook() {
-    LOGGER.info("closing workbook");
-    if (!isNull(workbook)) {
-      try (OutputStream outputStream = buffer(new FileOutputStream(docFilePath))) {
-        workbook.close();
-        releaseLock();
-        if (byteArrayOutputStream.size() > 0) {
-          outputStream.write(byteArrayOutputStream.toByteArray());
-        }
-      } catch (IOException e) {
-        throw new CloseWorkbookException(e);
-      } finally {
-        try {
-          byteArrayOutputStream.close();
-        } catch (IOException e) {
-        }
-        byteArrayOutputStream = new ByteArrayOutputStream();
-      }
-      this.workbook = null;
-      this.sheetData = null;
-    }
-  }
-
-  Workbook getOrLoadWorkbook() {
-    if (!isNull(workbook)) {
-      return workbook;
-    }
-    ZipSecureFile.setMinInflateRatio(0);
-    File file = getFile(docFilePath);
-    Workbook workbook;
-    try (InputStream inputStream = buffer(new FileInputStream(file))) {
-      workbook = new XSSFWorkbook(inputStream);
-    } catch (IOException e) {
-      throw new WorkbookCreationException(e);
-    }
-    return workbook;
   }
 
   void backupFile(File file) {
@@ -231,91 +170,35 @@ public class XlsService {
     if (isBackupFile) {
       backupFile(file);
     }
-    try {
-      workbook.write(byteArrayOutputStream);
-    } catch (IOException e) {
-      throw new WorkbookStoreException(e);
-    }
+    //TODO
     LOGGER.info("{} written successfully on disk", docFilePath);
   }
 
-  Sheet getSheet(String sheetName) {
-    Iterator<Sheet> sheetIterator = getOrLoadWorkbook().sheetIterator();
-    while (sheetIterator.hasNext()) {
-      Sheet sheet = sheetIterator.next();
-      if (sheet.getSheetName().contains(sheetName)) {
-        return sheet;
+  public void updateRow(Map<String, String> data, int rowNum, Resource scriptVbs) {
+    try (InputStream inputStream = scriptVbs.getInputStream()) {
+      List<String> lines = IOUtils.readLines(inputStream, "UTF-8");
+      StringBuilder stringBuilder = new StringBuilder();
+      for (String line : lines) {
+        stringBuilder.append(line).append("\n");
+        if (line.equals("objExcel.WorkSheets(1).Activate")) {
+          data.entrySet().forEach(entry -> updateCell(stringBuilder, entry.getKey(), entry.getValue(), rowNum));
+        }
       }
+      FileUtils.write(getFile(docRootDir, "script.vbs"), stringBuilder.toString(), "UTF-8");
+    } catch (IOException e) {
+      throw new RuntimeException(e);
     }
-    throw new SheetNotFoundException("Could not find sheet " + sheetName);
+
   }
 
-  boolean isCellEmpty(Cell cell) {
-    return isNull(cell) || BLANK == cell.getCellType();
+  public void updateCell(StringBuilder stringBuilder, String cellName, String cellValue,
+      int rowNum) {
+    stringBuilder.append(String.format(
+        "objExcel.ActiveSheet.Cells(%d, %d).Value = \"%s\"", rowNum,
+        sheetData.getColumnIndex(cellName), cellValue))
+        .append("\n");
   }
 
-  boolean isRowEmpty(Row row) {
-    return isNull(row) || row.getLastCellNum() <= 0;
-  }
-
-  public void addRows(List<Map<String, String>> data, int startRowNum) {
-    AtomicInteger atomicInteger = new AtomicInteger(startRowNum);
-    data.forEach(
-        stringObjectMap -> addRow(stringObjectMap, atomicInteger.getAndIncrement()));
-  }
-
-  public void addRow(Map<String, String> data, int rowNum) {
-    Sheet sheet = getSheet(sheetData.getSheetName());
-    if (isRowEmpty(sheet.getRow(rowNum))) {
-      sheet.createRow(rowNum);
-      sheetData.setLastRowNum(rowNum);
-      sheetData.setRowCount(rowNum + 1);
-    }
-    data.forEach((cellName, cellValue) -> {
-      int cellIndex = sheetData.getColumnIndex(cellName);
-      setCellValue(rowNum, cellIndex, cellValue);
-    });
-  }
-
-  public void updateRow(Map<String, String> data, int rowNum) {
-    data.entrySet().forEach(
-        entry -> updateCell(entry.getKey(), entry.getValue(), rowNum)
-    );
-  }
-
-  public void updateCell(String cellName, String cellValue, int rowNum) {
-    Map<String, Integer> columnIndex = sheetData.getColumnIndex();
-    Sheet sheet = getSheet(sheetData.getSheetName());
-    int headerRowNum = sheetData.getHeaderRowNum();
-    Row headerRow = sheet.getRow(headerRowNum);
-    int cellIndex = sheetData.getColumnIndex(cellName);
-    if (cellIndex < 0) {
-      LOGGER.warn("updateCell: Cell with name {} not found, creating...", cellName);
-      Cell headerCell = headerRow.createCell(headerRow.getLastCellNum());
-      cellIndex = headerCell.getColumnIndex();
-      headerCell.setCellValue(cellName);
-      columnIndex.put(headerCell.toString(), cellIndex);
-      LOGGER.warn("updateCell: Cell with name {} successfully created", cellName);
-    }
-    Row row = sheet.getRow(rowNum);
-    if (isRowEmpty(row)) {
-      return;
-    }
-    setCellValue(rowNum, cellIndex, cellValue);
-  }
-
-  void setCellValue(int rowNum, int cellIndex, String cellValue) {
-    Sheet sheet = getSheet(sheetData.getSheetName());
-    Row row = sheet.getRow(rowNum);
-    if (isRowEmpty(row)) {
-      row = sheet.createRow(rowNum);
-    }
-    Cell cell = row.getCell(cellIndex);
-    if (isCellEmpty(cell)) {
-      cell = row.createCell(cellIndex, STRING);
-    }
-    cell.setCellValue(cellValue);
-  }
 
   public SheetData processSheet(String sheetName, int skipRowNum,
       int headerRowNum, ExcelRowContentCollback excelRowContentCollback) {
