@@ -194,7 +194,7 @@ public class XlsService {
       int rowNum) {
     stringBuilder.append(String.format(
         "objExcel.ActiveSheet.Cells(%d, %d).Value = \"%s\"", rowNum,
-        sheetData.getColumnIndex(cellName), cellValue))
+        sheetData.getColumnIndex(cellName) + 1, cellValue))
         .append("\n");
   }
 
