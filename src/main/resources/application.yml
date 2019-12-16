@@ -1,6 +1,6 @@
 fi-cong-integration:
     channel: metlife.smtp
-    docs-file-path: \\epam.com\Projects\Petersburg\METL-MBS\Регистрация_30.08.13_test.xlsx
+    docs-file-path: \\epam.com\Projects\Petersburg\GZAM-APNT\temp\Регистрация_30.08.13_test.xlsx
     export-order-cron: 0 30 15 * * ?
     lock-repeat-interval-in-millis: 5000
     sender-email: otvet.cl@metlife.ru

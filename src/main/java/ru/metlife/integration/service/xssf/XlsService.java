@@ -193,7 +193,7 @@ public class XlsService {
   public void updateCell(StringBuilder stringBuilder, String cellName, String cellValue,
       int rowNum) {
     stringBuilder.append(String.format(
-        "objExcel.ActiveSheet.Cells(%d, %d).Value = \"%s\"", rowNum,
+        "objExcel.ActiveSheet.Cells(%d, %d).Value = \"%s\"", rowNum + 1,
         sheetData.getColumnIndex(cellName) + 1, cellValue))
         .append("\n");
   }
