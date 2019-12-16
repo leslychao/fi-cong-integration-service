@@ -179,7 +179,6 @@ public class DocumentExportService {
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
         updateRows(listOrders);
-        xlsService.releaseLock();
         xlsService.saveWorkbook(true, processBuilder);
       } else {
         log.info("exportDocument: Nothing to export");
@@ -207,7 +206,6 @@ public class DocumentExportService {
       List<OrderDto> listOrders = toOrderDto(sheetData);
       if (!listOrders.isEmpty()) {
         updateStatus(listOrders);
-        xlsService.releaseLock();
         xlsService.saveWorkbook(true, processBuilder);
       } else {
         log.info("updateDeliveryStatusInDocsFile: Nothing to update");

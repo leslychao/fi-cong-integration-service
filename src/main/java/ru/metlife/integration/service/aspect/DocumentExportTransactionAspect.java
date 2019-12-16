@@ -15,10 +15,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/**
- * The class is responsible for maintaining the integrity of the data between the file and the
- * database.
- */
 @Aspect
 @Component
 @Slf4j
@@ -27,13 +23,6 @@ public class DocumentExportTransactionAspect {
   @Value(value = "${fi-cong-integration.docs-file-path}")
   private String docFilePath;
 
-  /**
-   * This aspect allows you to restore the file specified in {@code fi-cong-integration.docs-file-path}
-   * after various types of failure, and also maintains the consistency of data between the file and
-   * the database, using its backup copy
-   *
-   * @throws IOException If copying the data fails.
-   */
   @AfterThrowing("execution(* ru.metlife.integration.service.DocumentExportService.exportDocument(..))")
   public void rollbackDockFile() throws IOException {
     log.info("rollbackDockFile: Started rollback");

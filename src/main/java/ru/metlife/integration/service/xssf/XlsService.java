@@ -163,6 +163,7 @@ public class XlsService {
 
   public void saveWorkbook(boolean isBackupFile, ProcessBuilder processBuilder) {
     LOGGER.info("saveWorkbook started");
+    releaseLock();
     File file = getFile(docFilePath);
     if (isBackupFile) {
       backupFile(file);

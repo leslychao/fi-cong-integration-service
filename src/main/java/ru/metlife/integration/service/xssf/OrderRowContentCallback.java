@@ -32,7 +32,8 @@ public class OrderRowContentCallback implements ExcelRowContentCollback {
     String partner = getStringCellValue(mapData, "Партнер");
     String region = getStringCellValue(mapData, "Region");
     List<RecipientDto> recipients = dictionaryService
-        .getRecipientsFromDictionary(dictionarySheetData, getOrderIndependentHash(dealership, partner, region));
+        .getRecipientsFromDictionary(dictionarySheetData,
+            getOrderIndependentHash(dealership, partner, region));
     if (!recipients.isEmpty()
         && isBlank(orderId)
         && isNotBlank(polNum)
