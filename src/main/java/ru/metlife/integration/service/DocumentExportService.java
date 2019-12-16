@@ -89,17 +89,6 @@ public class DocumentExportService {
     xlsService = new XlsService(docFilePath, lockRepeatIntervalInMillis);
     docRootDirPath = getFile(docFilePath).getParent();
     executionScriptPath = getFile(docRootDirPath, "run.bat").getAbsolutePath();
-    try (InputStream inputStream = runBat.getInputStream()) {
-      List<String> lines = IOUtils.readLines(inputStream, "UTF-8");
-      FileUtils.deleteQuietly(getFile(executionScriptPath));
-      StringBuilder sb = new StringBuilder();
-      for (String line : lines) {
-        sb.append(line.replaceAll("%docFilePath%", docFilePath)).append(String.format("%n"));
-      }
-      FileUtils.write(getFile(executionScriptPath), sb.toString(), "UTF-8");
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
     processBuilder = new ProcessBuilder();
     processBuilder.command(executionScriptPath);
     processBuilder.directory(getFile(docRootDirPath));
@@ -190,6 +179,8 @@ public class DocumentExportService {
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
         updateRows(listOrders);
+        xlsService.releaseLock();
+        xlsService.saveWorkbook(true, processBuilder);
       } else {
         log.info("exportDocument: Nothing to export");
       }
@@ -198,7 +189,6 @@ public class DocumentExportService {
       log.error(e.getMessage());
     } finally {
       xlsService.releaseLock();
-      xlsService.saveWorkbook(true, processBuilder);
       isExportDocumentActive = false;
     }
   }
@@ -217,6 +207,8 @@ public class DocumentExportService {
       List<OrderDto> listOrders = toOrderDto(sheetData);
       if (!listOrders.isEmpty()) {
         updateStatus(listOrders);
+        xlsService.releaseLock();
+        xlsService.saveWorkbook(true, processBuilder);
       } else {
         log.info("updateDeliveryStatusInDocsFile: Nothing to update");
       }
@@ -224,7 +216,6 @@ public class DocumentExportService {
       log.error(e.getMessage());
     } finally {
       xlsService.releaseLock();
-      xlsService.saveWorkbook(true, processBuilder);
     }
   }
 
