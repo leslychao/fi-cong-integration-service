@@ -58,12 +58,6 @@ public class OrderService extends AbstractCrudService<OrderDto, OrderEntity> {
     return mapToDto(orderRepository.findByOrderId(orderId));
   }
 
-  public List<OrderDto> findByDeliveryStatusIsNotNullAndNotCompleted() {
-    return orderRepository.findByDeliveryStatusIsNotNullAndNotCompleted().stream()
-        .map(this::mapToDto)
-        .collect(toList());
-  }
-
   @Override
   protected OrderEntity entityPreSaveAction(OrderEntity entity) {
     entity.setOrderId(UUID.randomUUID().toString());

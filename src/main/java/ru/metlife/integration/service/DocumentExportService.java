@@ -85,10 +85,10 @@ public class DocumentExportService {
           dataFiTimeFreezeService.saveOrder(orderDto);
           deliveryDataService.saveDeliveryData(deliveryDataService.toDeliveryDataDto(orderDto));
         });
+        log.info("document export completed!");
       } else {
         log.info("exportDocument: Nothing to export");
       }
-      log.info("document export completed!");
     } catch (RuntimeException e) {
       log.error(e.getMessage());
     }
@@ -99,15 +99,19 @@ public class DocumentExportService {
   public void updateDeliveryStatus() {
     log.info("start updateDeliveryStatus");
     try {
-      List<OrderDto> listOrders = orderService.findByDeliveryStatusIsNotNullAndNotCompleted();
+      List<DeliveryDataDto> listDeliveryStatuses = deliveryDataService
+          .findByDeliveryStatus();
+      List<OrderDto> listOrders = listDeliveryStatuses.stream()
+          .map(deliveryDataDto -> orderService.findByOrderId(deliveryDataDto.getOrderId()))
+          .collect(toList());
       if (!listOrders.isEmpty()) {
         listOrders.forEach(orderDto -> {
           deliveryDataService.updateStatus(orderDto.getDeliveryStatus(), orderDto.getOrderId());
         });
+        log.info("update delivery status completed!");
       } else {
         log.info("updateDeliveryStatus: Nothing to update");
       }
-      log.info("update delivery status completed!");
     } catch (RuntimeException e) {
       log.error(e.getMessage());
     }

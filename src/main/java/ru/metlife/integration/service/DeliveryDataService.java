@@ -1,6 +1,9 @@
 package ru.metlife.integration.service;
 
+import static java.util.stream.Collectors.toList;
+
 import java.io.Serializable;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -37,12 +40,15 @@ public class DeliveryDataService extends AbstractCrudService<DeliveryDataDto, De
   }
 
   @Transactional(readOnly = true)
-  public DeliveryDataDto findByOrderId(String orderId) {
-    return mapToDto(deliveryDataRepository.findByOrderId(orderId));
+  public List<DeliveryDataDto> findByDeliveryStatus() {
+    return deliveryDataRepository.findByDeliveryStatus()
+        .stream()
+        .map(this::mapToDto)
+        .collect(toList());
   }
 
   @Transactional
-  public String updateStatus(String deliveryStatus, String orderId) {
+  public int updateStatus(String deliveryStatus, String orderId) {
     return deliveryDataRepository.updateStatus(deliveryStatus, orderId);
   }
 
