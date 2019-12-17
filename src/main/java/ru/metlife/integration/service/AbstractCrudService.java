@@ -3,19 +3,14 @@ package ru.metlife.integration.service;
 import static java.util.Objects.requireNonNull;
 
 import java.io.Serializable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.transaction.annotation.Transactional;
 import ru.metlife.integration.service.mapper.BeanMapper;
 
 public abstract class AbstractCrudService<T, E> {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(AbstractCrudService.class);
-
   @Transactional
   public T save(T dto) {
-    LOGGER.info("Save dto {}", dto);
     requireNonNull(dto);
     E entity = mapToEntity(dto);
     entity = entityPreSaveAction(entity);

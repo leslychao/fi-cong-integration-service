@@ -30,7 +30,6 @@ public class OrderRowContentCallback implements ExcelRowContentCollback {
   @Override
   public void processRow(int rowNum, Map<String, String> mapData, List<Map<String, String>> data) {
     String polNum = getStringCellValue(mapData, "Номер сертификата");
-    String orderId = getStringCellValue(mapData, "order_id");
     String dealership = getStringCellValue(mapData, "Дилерский центр");
     String partner = getStringCellValue(mapData, "Партнер");
     String region = getStringCellValue(mapData, "Region");
@@ -41,7 +40,7 @@ public class OrderRowContentCallback implements ExcelRowContentCollback {
     if (!recipients.isEmpty()
         && isNotBlank(polNum)
         && !Objects.equals("Совкомбанк", polNum)
-        && !deliveryDataService.existsDeliveryDataByOrderIdAndPpNum(orderId, ppNum)
+        && !deliveryDataService.existsDeliveryDataByPpNum(ppNum)
     ) {
       mapData.put("rowNum", valueOf(rowNum));
       data.add(new LinkedHashMap<>(mapData));

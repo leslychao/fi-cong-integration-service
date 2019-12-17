@@ -1,9 +1,6 @@
 package ru.metlife.integration.service;
 
-import static java.util.stream.Collectors.toList;
-
 import java.io.Serializable;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -11,6 +8,7 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.metlife.integration.dto.DeliveryDataDto;
+import ru.metlife.integration.dto.OrderDto;
 import ru.metlife.integration.entity.DeliveryDataEntity;
 import ru.metlife.integration.repository.DeliveryDataRepository;
 import ru.metlife.integration.service.mapper.BeanMapper;
@@ -34,19 +32,18 @@ public class DeliveryDataService extends AbstractCrudService<DeliveryDataDto, De
   }
 
   @Transactional(readOnly = true)
-  public DeliveryDataDto findByPpNum(String ppNum) {
-    return mapToDto(deliveryDataRepository.findByPpNum(ppNum));
+  public boolean existsDeliveryDataByPpNum(String ppNum) {
+    return deliveryDataRepository.existsDeliveryDataByPpNum(ppNum);
   }
 
   @Transactional(readOnly = true)
-  public List<DeliveryDataDto> findByOrderId(List<String> orderId) {
-    return deliveryDataRepository.findByOrderId(orderId).stream().map(this::mapToDto)
-        .collect(toList());
+  public DeliveryDataDto findByOrderId(String orderId) {
+    return mapToDto(deliveryDataRepository.findByOrderId(orderId));
   }
 
-  @Transactional(readOnly = true)
-  public boolean existsDeliveryDataByOrderIdAndPpNum(String orderId, String ppNum) {
-    return deliveryDataRepository.existsDeliveryDataByOrderIdAndPpNum(orderId, ppNum);
+  @Transactional
+  public String updateStatus(String deliveryStatus, String orderId) {
+    return deliveryDataRepository.updateStatus(deliveryStatus, orderId);
   }
 
   @Override
@@ -63,5 +60,14 @@ public class DeliveryDataService extends AbstractCrudService<DeliveryDataDto, De
   @Override
   protected CrudRepository<DeliveryDataEntity, ? extends Serializable> getRepository() {
     return deliveryDataRepository;
+  }
+
+  public DeliveryDataDto toDeliveryDataDto(OrderDto orderDto) {
+    DeliveryDataDto deliveryDataDto = new DeliveryDataDto();
+    deliveryDataDto.setPpNum(orderDto.getPpNum());
+    deliveryDataDto.setOrderId(orderDto.getOrderId());
+    deliveryDataDto.setCreatedAt(orderDto.getCreatedAt());
+    deliveryDataDto.setDeliveryStatus(orderDto.getDeliveryStatus());
+    return deliveryDataDto;
   }
 }

@@ -1,6 +1,5 @@
 package ru.metlife.integration;
 
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,9 +17,9 @@ public class MyController {
     return "ok";
   }
 
-  @RequestMapping(value = "/updateDeliveryStatusInDocsFile")
-  public String updateDeliveryStatusInDocsFile() {
-    documentExportService.updateDeliveryStatusInDocsFile();
+  @RequestMapping(value = "/updateDeliveryStatus")
+  public String updateDeliveryStatus() {
+    documentExportService.updateDeliveryStatus();
     return "ok";
   }
 }

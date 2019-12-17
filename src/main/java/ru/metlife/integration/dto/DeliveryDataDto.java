@@ -15,7 +15,6 @@ public class DeliveryDataDto implements Serializable {
 
   String id;
   String orderId;
-  String recipient;
   String deliveryStatus;
   Date createdAt;
   String ppNum;

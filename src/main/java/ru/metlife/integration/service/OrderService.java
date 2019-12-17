@@ -8,7 +8,6 @@ import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.of;
 import static org.springframework.util.DigestUtils.md5Digest;
 import static ru.metlife.integration.util.CommonUtils.getStringCellValue;
-import static ru.metlife.integration.util.Constants.FI_LETTER_STATUS;
 
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
@@ -31,6 +30,8 @@ import ru.metlife.integration.service.xssf.XlsService.SheetData;
 
 @Service
 public class OrderService extends AbstractCrudService<OrderDto, OrderEntity> {
+
+  private static final int FI_LETTER_STATUS = 17;
 
   @Value("${fi-cong-integration.sender-email}")
   private String sender;
@@ -55,6 +56,12 @@ public class OrderService extends AbstractCrudService<OrderDto, OrderEntity> {
   @Transactional(readOnly = true)
   public OrderDto findByOrderId(String orderId) {
     return mapToDto(orderRepository.findByOrderId(orderId));
+  }
+
+  public List<OrderDto> findByDeliveryStatusIsNotNullAndNotCompleted() {
+    return orderRepository.findByDeliveryStatusIsNotNullAndNotCompleted().stream()
+        .map(this::mapToDto)
+        .collect(toList());
   }
 
   @Override

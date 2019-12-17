@@ -38,4 +38,9 @@ public class DataFiTimeFreezeMapper implements BeanMapper<OrderDto, DataFiTimeFr
     orderDto.setOrderId(entity.getOrderId());
     return orderDto;
   }
+
+  @Override
+  public DataFiTimeFreezeEntity updateEntityWithDto(OrderDto dto, DataFiTimeFreezeEntity entity) {
+    return null;
+  }
 }

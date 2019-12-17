@@ -4,7 +4,6 @@ import static java.util.stream.Collectors.toList;
 import static ru.metlife.integration.util.CommonUtils.getOrderIndependentHash;
 
 import java.util.List;
-import java.util.Objects;
 import javax.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.SerializationUtils;
@@ -13,11 +12,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import ru.metlife.integration.dto.DeliveryDataDto;
 import ru.metlife.integration.dto.OrderDto;
 import ru.metlife.integration.dto.RecipientDto;
 import ru.metlife.integration.service.xssf.OrderRowContentCallback;
-import ru.metlife.integration.service.xssf.OrderRowUpdateStatusCallback;
 import ru.metlife.integration.service.xssf.XlsService;
 import ru.metlife.integration.service.xssf.XlsService.SheetData;
 
@@ -52,14 +50,6 @@ public class DocumentExportService {
     xlsService = new XlsService(docFilePath);
   }
 
-  void createOrder(List<OrderDto> listOrders) {
-    Objects.requireNonNull(listOrders);
-    listOrders.forEach(orderDto -> {
-      orderService.saveOrder(orderDto);
-      dataFiTimeFreezeService.saveOrder(orderDto);
-    });
-  }
-
   List<OrderDto> getOrdersToExport(SheetData sheetData) {
     SheetData dictionarySheetData = dictionaryService.processSheet();
     return orderService.toOrderDto(sheetData)
@@ -88,30 +78,34 @@ public class DocumentExportService {
           .processSheet("Общая", 0, 0,
               new OrderRowContentCallback(dictionaryService, deliveryDataService));
       List<OrderDto> listOrders = getOrdersToExport(sheetData);
-      createOrder(listOrders);
       if (!listOrders.isEmpty()) {
         log.info("Orders to export {}", listOrders.size());
+        listOrders.forEach(orderDto -> {
+          orderService.saveOrder(orderDto);
+          dataFiTimeFreezeService.saveOrder(orderDto);
+          deliveryDataService.saveDeliveryData(deliveryDataService.toDeliveryDataDto(orderDto));
+        });
       } else {
         log.info("exportDocument: Nothing to export");
       }
       log.info("document export completed!");
     } catch (RuntimeException e) {
-      TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
       log.error(e.getMessage());
     }
   }
 
   @Scheduled(cron = "${fi-cong-integration.update-delivery-status-cron}")
   @Transactional
-  public void updateDeliveryStatusInDocFile() {
-    log.info("start updateDeliveryStatusInDocFile");
+  public void updateDeliveryStatus() {
+    log.info("start updateDeliveryStatus");
     try {
-      SheetData sheetData = xlsService
-          .processSheet("Общая", 0, 0, new OrderRowUpdateStatusCallback());
-      List<OrderDto> listOrders = orderService.toOrderDto(sheetData);
+      List<OrderDto> listOrders = orderService.findByDeliveryStatusIsNotNullAndNotCompleted();
       if (!listOrders.isEmpty()) {
+        listOrders.forEach(orderDto -> {
+          deliveryDataService.updateStatus(orderDto.getDeliveryStatus(), orderDto.getOrderId());
+        });
       } else {
-        log.info("updateDeliveryStatusInDocFile: Nothing to update");
+        log.info("updateDeliveryStatus: Nothing to update");
       }
       log.info("update delivery status completed!");
     } catch (RuntimeException e) {

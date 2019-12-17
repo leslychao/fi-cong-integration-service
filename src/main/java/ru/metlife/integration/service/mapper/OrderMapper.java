@@ -40,4 +40,9 @@ public class OrderMapper implements BeanMapper<OrderDto, OrderEntity> {
     orderDto.setDeliveryStatus(entity.getDeliveryStatus());
     return orderDto;
   }
+
+  @Override
+  public OrderEntity updateEntityWithDto(OrderDto dto, OrderEntity entity) {
+    return null;
+  }
 }

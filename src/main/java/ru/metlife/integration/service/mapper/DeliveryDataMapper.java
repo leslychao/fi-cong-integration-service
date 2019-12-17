@@ -15,7 +15,6 @@ public class DeliveryDataMapper implements BeanMapper<DeliveryDataDto, DeliveryD
     deliveryDataEntity.setId(dto.getId());
     deliveryDataEntity.setOrderId(dto.getOrderId());
     deliveryDataEntity.setDeliveryStatus(dto.getDeliveryStatus());
-    deliveryDataEntity.setRecipient(dto.getRecipient());
     deliveryDataEntity.setCreatedAt(dto.getCreatedAt());
     deliveryDataEntity.setPpNum(dto.getPpNum());
     return deliveryDataEntity;
@@ -30,9 +29,13 @@ public class DeliveryDataMapper implements BeanMapper<DeliveryDataDto, DeliveryD
     deliveryDataDto.setId(entity.getId());
     deliveryDataDto.setOrderId(entity.getOrderId());
     deliveryDataDto.setDeliveryStatus(entity.getDeliveryStatus());
-    deliveryDataDto.setRecipient(entity.getRecipient());
     deliveryDataDto.setCreatedAt(entity.getCreatedAt());
     deliveryDataDto.setPpNum(entity.getPpNum());
     return deliveryDataDto;
+  }
+
+  @Override
+  public DeliveryDataEntity updateEntityWithDto(DeliveryDataDto dto, DeliveryDataEntity entity) {
+    return null;
   }
 }

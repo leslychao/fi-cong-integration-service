@@ -26,8 +26,6 @@ public class DeliveryDataEntity implements Serializable {
   String id;
   @Column(name = "order_id")
   String orderId;
-  @Column(name = "recipient")
-  String recipient;
   @Column(name = "delivery_status")
   String deliveryStatus;
   @Column(name = "created_at")
