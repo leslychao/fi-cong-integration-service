@@ -1,34 +1,33 @@
 fi-cong-integration:
-    channel: metlife.smtp
-    docs-file-path: \\epam.com\Projects\Petersburg\GZAM-APNT\temp\Регистрация_30.08.13.xlsx
-    export-order-cron: 0 30 15 * * ?
-    lock-repeat-interval-in-millis: 5000
-    sender-email: otvet.cl@metlife.ru
-    update-state-in-docs-file-cron: 0 0/10 * * * ?
+  channel: metlife.smtp
+  doc-file-path: \\epam.com\Projects\Petersburg\GZAM-APNT\temp\Регистрация_30.08.13_test.xlsx
+  export-order-cron: 0 30 15 * * ?
+  update-delivery-status-cron: 0 0/10 * * * ?
+  sender-email: otvet.cl@metlife.ru
 server:
-    port: 8080
+  port: 8080
 spring:
-    datasource:
-        driverClassName: com.microsoft.sqlserver.jdbc.SQLServerDriver
-        name: gzam_apnt_ds
-        password: gzam_apnt_user
-        url: jdbc:sqlserver://localhost:1433;databasename=eDelivery_EPAM
-        username: gzam_apnt_user
-    jackson:
-        serialization:
-            INDENT_OUTPUT: true
-    jpa:
+  datasource:
+    driverClassName: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    name: gzam_apnt_ds
+    password: gzam_apnt_user
+    url: jdbc:sqlserver://localhost:1433;databasename=eDelivery_EPAM
+    username: gzam_apnt_user
+  jackson:
+    serialization:
+      INDENT_OUTPUT: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServer2012Dialect
+        format_sql: true
+        show_sql: false
+        use_sql_comments: true
+      org:
         hibernate:
-            ddl-auto: none
-        properties:
-            hibernate:
-                dialect: org.hibernate.dialect.SQLServer2012Dialect
-                format_sql: true
-                show_sql: false
-                use_sql_comments: true
-            org:
-                hibernate:
-                    flushMode: AUTO
-    main:
-        banner-mode: 'off'
-    mandatory-file-encoding: UTF-8
+          flushMode: AUTO
+  main:
+    banner-mode: 'off'
+  mandatory-file-encoding: UTF-8

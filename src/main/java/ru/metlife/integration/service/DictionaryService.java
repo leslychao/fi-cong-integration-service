@@ -29,18 +29,14 @@ import ru.metlife.integration.util.CommonUtils;
 @Slf4j
 public class DictionaryService {
 
-
-  @Value("${fi-cong-integration.docs-file-path}")
+  @Value("${fi-cong-integration.doc-file-path}")
   private String docFilePath;
-
-  @Value("${fi-cong-integration.lock-repeat-interval-in-millis}")
-  private long lockRepeatIntervalInMillis;
 
   private XlsService xlsService;
 
   @PostConstruct
   public void init() {
-    xlsService = new XlsService(docFilePath, lockRepeatIntervalInMillis);
+    xlsService = new XlsService(docFilePath);
   }
 
   List<DictionaryDto> toDictionary(XlsService.SheetData dictionarySheetData) {

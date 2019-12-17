@@ -24,11 +24,6 @@ public class OrderMapper implements BeanMapper<OrderDto, OrderEntity> {
   }
 
   @Override
-  public OrderEntity updateEntityWithDto(OrderDto dto, OrderEntity entity) {
-    return null;
-  }
-
-  @Override
   public OrderDto mapToDto(OrderEntity entity) {
     if (isNull(entity)) {
       return null;

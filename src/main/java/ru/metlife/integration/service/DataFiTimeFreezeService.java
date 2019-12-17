@@ -1,7 +1,6 @@
 package ru.metlife.integration.service;
 
 import java.util.UUID;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.repository.CrudRepository;
@@ -12,7 +11,6 @@ import ru.metlife.integration.repository.DataFiTimeFreezeRepository;
 import ru.metlife.integration.service.mapper.BeanMapper;
 
 @Service
-@Slf4j
 public class DataFiTimeFreezeService extends AbstractCrudService<OrderDto, DataFiTimeFreezeEntity> {
 
   private DataFiTimeFreezeRepository dataFiTimeFreezeRepository;
