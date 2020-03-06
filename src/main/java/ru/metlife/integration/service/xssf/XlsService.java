@@ -1,7 +1,5 @@
 package ru.metlife.integration.service.xssf;
 
-import static java.util.Optional.ofNullable;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -165,13 +163,5 @@ public class XlsService {
     private int rowCount;
     private List<Map<String, String>> data = new ArrayList<>();
     private Map<String, Integer> columnIndex = new HashMap<>();
-
-    public int getColumnIndex(String columnName) {
-      return ofNullable(columnIndex.get(columnName))
-          .orElseGet(() -> {
-            LOGGER.warn("Can't find index for column {}", columnName);
-            return -1;
-          });
-    }
   }
 }

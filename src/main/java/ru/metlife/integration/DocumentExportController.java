@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.metlife.integration.service.DocumentExportService;
 
 @RestController
-public class MyController {
+public class DocumentExportController {
 
   @Autowired
   private DocumentExportService documentExportService;
