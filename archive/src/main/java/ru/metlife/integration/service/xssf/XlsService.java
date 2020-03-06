@@ -35,7 +35,6 @@ import javax.xml.parsers.ParserConfigurationException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.apache.commons.io.IOUtils;
 import org.apache.poi.ooxml.util.SAXHelper;
 import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
 import org.apache.poi.openxml4j.opc.OPCPackage;
@@ -46,6 +45,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellReference;
+import org.apache.poi.util.IOUtils;
 import org.apache.poi.xssf.eventusermodel.ReadOnlySharedStringsTable;
 import org.apache.poi.xssf.eventusermodel.XSSFReader;
 import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler;
@@ -59,6 +59,11 @@ import org.xml.sax.ContentHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
+import ru.metlife.integration.exception.CloseWorkbookException;
+import ru.metlife.integration.exception.ReleaseLockException;
+import ru.metlife.integration.exception.SheetNotFoundException;
+import ru.metlife.integration.exception.WorkbookCreationException;
+import ru.metlife.integration.exception.WorkbookStoreException;
 
 public class XlsService {
 
@@ -76,10 +81,10 @@ public class XlsService {
   private RandomAccessFile randomAccessFile;
 
   private String docFilePath;
-  private SheetData sheetData;
-
   private Workbook workbook;
+
   private ByteArrayOutputStream byteArrayOutputStream;
+  private SheetData sheetData;
 
   public XlsService(String docFilePath) {
     this(docFilePath, DEFAULT_LOCK_REPEAT_INTERVAL_IN_MILLIS);
@@ -90,7 +95,26 @@ public class XlsService {
     this.lockRepeatIntervalInMillis = lockRepeatIntervalInMillis;
   }
 
-  public void acquireLock() {
+  public void releaseLock() {
+    if (!isNull(fileLock)) {
+      try {
+        fileLock.release();
+        fileLock = null;
+      } catch (IOException e) {
+        throw new ReleaseLockException(e);
+      }
+    }
+    if (!isNull(randomAccessFile)) {
+      try {
+        randomAccessFile.close();
+        randomAccessFile = null;
+      } catch (IOException e) {
+        throw new ReleaseLockException(e);
+      }
+    }
+  }
+
+  void acquireLock() {
     ReentrantLock reentrantLock = new ReentrantLock();
     Condition condition = reentrantLock.newCondition();
     ScheduledExecutorService scheduledExecutorService = Executors
@@ -120,26 +144,6 @@ public class XlsService {
       }
     }
   }
-
-  public void releaseLock() {
-    if (!isNull(fileLock)) {
-      try {
-        fileLock.release();
-        fileLock = null;
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    }
-    if (!isNull(randomAccessFile)) {
-      try {
-        randomAccessFile.close();
-        randomAccessFile = null;
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  }
-
 
   boolean tryLock() {
     File file = getFile(docFilePath);
@@ -179,7 +183,7 @@ public class XlsService {
           outputStream.write(byteArrayOutputStream.toByteArray());
         }
       } catch (IOException e) {
-        throw new RuntimeException(e);
+        throw new CloseWorkbookException(e);
       } finally {
         try {
           byteArrayOutputStream.close();
@@ -202,7 +206,7 @@ public class XlsService {
     try (InputStream inputStream = buffer(new FileInputStream(file))) {
       workbook = new XSSFWorkbook(inputStream);
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new WorkbookCreationException(e);
     }
     return workbook;
   }
@@ -230,7 +234,7 @@ public class XlsService {
     try {
       workbook.write(byteArrayOutputStream);
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new WorkbookStoreException(e);
     }
     LOGGER.info("{} written successfully on disk", docFilePath);
   }
@@ -243,7 +247,7 @@ public class XlsService {
         return sheet;
       }
     }
-    throw new RuntimeException("Could not find sheet " + sheetName);
+    throw new SheetNotFoundException("Could not find sheet " + sheetName);
   }
 
   boolean isCellEmpty(Cell cell) {
